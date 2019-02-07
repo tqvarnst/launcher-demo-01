@@ -1,0 +1,180 @@
+apiVersion: v1
+kind: Template
+parameters:
+  - name: SOURCE_REPOSITORY_URL
+    description: The source URL for the application
+    displayName: Source URL
+    value: 'https://github.com/dummy_org/dummy_repo'
+    required: true
+  - name: GITHUB_WEBHOOK_SECRET
+    description: The secret used to configure a GitHub webhook
+    displayName: GitHub Webhook Secret
+    required: true
+    from: '[a-zA-Z0-9]{40}'
+    generate: expression
+objects:
+  - kind: ImageStream
+    apiVersion: v1
+    metadata:
+      name: centos7-s2i-web-app
+      creationTimestamp: null
+      labels:
+        app: profuse-meal
+    spec:
+      lookupPolicy:
+        local: false
+      tags:
+        - name: latest
+          from:
+            kind: DockerImage
+            name: nodeshift/centos7-s2i-web-app
+          generation: null
+          importPolicy: {}
+          referencePolicy:
+            type: ''
+    status:
+      dockerImageRepository: ''
+  - kind: ImageStream
+    apiVersion: v1
+    metadata:
+      name: profuse-meal-frontend
+      creationTimestamp: null
+      labels:
+        app: profuse-meal
+    spec:
+      lookupPolicy:
+        local: false
+    status:
+      dockerImageRepository: ''
+  - kind: BuildConfig
+    apiVersion: v1
+    metadata:
+      name: profuse-meal-frontend
+      creationTimestamp: null
+      labels:
+        app: profuse-meal
+    spec:
+      triggers:
+        - type: GitHub
+          github:
+            secret: '${GITHUB_WEBHOOK_SECRET}'
+        - type: ConfigChange
+        - type: ImageChange
+          imageChange: {}
+      source:
+        type: Git
+        git:
+          uri: '${SOURCE_REPOSITORY_URL}'
+        contextDir: frontend
+      strategy:
+        type: Source
+        sourceStrategy:
+          from:
+            kind: ImageStreamTag
+            name: 'centos7-s2i-web-app:latest'
+          incremental: true
+          env: []
+      output:
+        to:
+          kind: ImageStreamTag
+          name: 'profuse-meal-frontend:latest'
+      resources: {}
+      postCommit: {}
+      nodeSelector: null
+    status:
+      lastVersion: 0
+  - kind: DeploymentConfig
+    apiVersion: v1
+    metadata:
+      name: profuse-meal-frontend
+      creationTimestamp: null
+      labels:
+        app: profuse-meal
+    spec:
+      strategy:
+        resources: {}
+      triggers:
+        - type: ConfigChange
+        - type: ImageChange
+          imageChangeParams:
+            automatic: true
+            containerNames:
+              - profuse-meal-frontend
+            from:
+              kind: ImageStreamTag
+              name: 'profuse-meal-frontend:latest'
+      replicas: 1
+      test: false
+      selector:
+        app: placeholder-app-label-d46881878f594a2dadfd963843452aab
+        deploymentconfig: profuse-meal-frontend
+      template:
+        metadata:
+          creationTimestamp: null
+          labels:
+            app: placeholder-app-label-d46881878f594a2dadfd963843452aab
+            deploymentconfig: profuse-meal-frontend
+        spec:
+          containers:
+            - name: profuse-meal-frontend
+              image: 'profuse-meal-frontend:latest'
+              ports:
+                - containerPort: 8080
+                  protocol: TCP
+              resources:
+                limits:
+                  memory: 512Mi
+              env: []
+              readinessProbe:
+                httpGet:
+                  path: /
+                  port: 8080
+                  scheme: HTTP
+                initialDelaySeconds: 5
+                timeoutSeconds: 3
+                periodSeconds: 10
+                failureThreshold: 10
+              livenessProbe:
+                httpGet:
+                  path: /
+                  port: 8080
+                  scheme: HTTP
+                initialDelaySeconds: 5
+                timeoutSeconds: 3
+    status:
+      latestVersion: 0
+      observedGeneration: 0
+      replicas: 0
+      updatedReplicas: 0
+      availableReplicas: 0
+      unavailableReplicas: 0
+  - kind: Service
+    apiVersion: v1
+    metadata:
+      name: profuse-meal-frontend
+      creationTimestamp: null
+      labels:
+        app: profuse-meal
+    spec:
+      ports:
+        - name: 8080-tcp
+          protocol: TCP
+          port: 8080
+          targetPort: 8080
+      selector:
+        app: placeholder-app-label-d46881878f594a2dadfd963843452aab
+        deploymentconfig: profuse-meal-frontend
+    status:
+      loadBalancer: {}
+  - apiVersion: v1
+    kind: Route
+    metadata:
+      name: profuse-meal-frontend
+      labels:
+        app: profuse-meal
+    spec:
+      port:
+        targetPort: 8080-tcp
+      to:
+        kind: Service
+        name: profuse-meal-frontend
